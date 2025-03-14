@@ -23,38 +23,72 @@ if (
 
     let cachedSettings: ExtensionSettings = { ...defaultSettings };
 
-    function addTargetBlankToLinks(settings: ExtensionSettings): void {
-      const path = window.location.pathname;
-      const isPRPage = path.includes("/pull/");
-      const isIssuePage = path.includes("/issues/");
+    function shouldProcessLink(
+      link: HTMLAnchorElement,
+      settings: ExtensionSettings,
+    ): boolean {
+      const linkHref = link.getAttribute("href");
+      if (!linkHref) return false;
+
+      if (linkHref.startsWith("#")) return false;
+
+      const currentPath = window.location.pathname;
+      const isPRPage = currentPath.includes("/pull/");
+      const isIssuePage = currentPath.includes("/issues/");
 
       if (
-        (isPRPage && settings.prLinks) ||
-        (isIssuePage && settings.issueLinks)
+        !(
+          (isPRPage && settings.prLinks) ||
+          (isIssuePage && settings.issueLinks)
+        )
       ) {
-        (
-          document.querySelectorAll(
-            "a:not([data-target-processed])",
-          ) as NodeListOf<HTMLAnchorElement>
-        ).forEach((link: HTMLAnchorElement) => {
-          const excludedClasses = (settings.excludedClasses || "")
-            .split(",")
-            .map((cls: string) => cls.trim())
-            .filter((cls: string) => cls.length > 0);
-
-          if (
-            excludedClasses.some(
-              (cls: string) => cls && link.closest("." + cls),
-            )
-          ) {
-            return;
-          }
-
-          link.setAttribute("target", "_blank");
-          link.setAttribute("rel", "noopener noreferrer");
-          link.setAttribute("data-target-processed", "true");
-        });
+        return false;
       }
+
+      try {
+        const linkURL = new URL(linkHref, location.href);
+        if (linkURL.pathname === currentPath) return false;
+      } catch (e) {
+        return false;
+      }
+
+      const excludedClasses = (settings.excludedClasses || "")
+        .split(",")
+        .map((cls: string) => cls.trim())
+        .filter((cls: string) => cls.length > 0);
+
+      if (
+        excludedClasses.some((cls: string) => cls && link.closest("." + cls))
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+
+    function applyTargetBlank(link: HTMLAnchorElement): void {
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer");
+      link.setAttribute("data-target-processed", "true");
+    }
+
+    function processLink(
+      link: HTMLAnchorElement,
+      settings: ExtensionSettings,
+    ): void {
+      if (shouldProcessLink(link, settings)) {
+        applyTargetBlank(link);
+      }
+    }
+
+    function addTargetBlankToLinks(settings: ExtensionSettings): void {
+      (
+        document.querySelectorAll(
+          "a:not([data-target-processed])",
+        ) as NodeListOf<HTMLAnchorElement>
+      ).forEach((link: HTMLAnchorElement) => {
+        processLink(link, settings);
+      });
     }
 
     function processAddedNodes(
@@ -81,36 +115,6 @@ if (
       });
     }
 
-    function processLink(
-      link: HTMLAnchorElement,
-      settings: ExtensionSettings,
-    ): void {
-      const path = window.location.pathname;
-      const isPRPage = path.includes("/pull/");
-      const isIssuePage = path.includes("/issues/");
-
-      if (
-        (isPRPage && settings.prLinks) ||
-        (isIssuePage && settings.issueLinks)
-      ) {
-        const excludedClasses = (settings.excludedClasses || "")
-          .split(",")
-          .map((cls: string) => cls.trim())
-          .filter((cls: string) => cls.length > 0);
-
-        if (
-          excludedClasses.some((cls: string) => cls && link.closest("." + cls))
-        ) {
-          return;
-        }
-
-        link.setAttribute("target", "_blank");
-        link.setAttribute("rel", "noopener noreferrer");
-        link.setAttribute("data-target-processed", "true");
-      }
-    }
-
-    // 直接處理 mutations，不使用 debounce
     const observer = new MutationObserver(
       (mutations: MutationRecord[]): void => {
         mutations.forEach((mutation: MutationRecord) => {
